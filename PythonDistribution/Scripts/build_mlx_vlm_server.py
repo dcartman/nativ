@@ -32,11 +32,8 @@ OVERLAY_SERVER = PYTHON_DISTRIBUTION_ROOT / "Overlay" / "nativ_server.py"
 IMAGE_MODEL_MANIFEST_GENERATOR = Path(__file__).with_name(
     "generate_image_model_manifest.py"
 )
-<<<<<<< Updated upstream
-=======
 DISPATCH_PATCHER = Path(__file__).with_name("patch_mlx_vlm_dispatch.py")
 EDIT_ERROR_PATCHER = Path(__file__).with_name("patch_mlx_vlm_edit_error.py")
->>>>>>> Stashed changes
 DEFAULT_PYTHON_VERSION = "3.12.13"
 DEFAULT_PBS_RELEASE = "20260508"
 DEFAULT_PBS_ASSET = (
@@ -315,11 +312,8 @@ def build_signature(
         ),
         "launcher_sha256": file_sha256(LAUNCHER_SOURCE),
         "overlay_server_sha256": file_sha256(OVERLAY_SERVER),
-<<<<<<< Updated upstream
-=======
         "dispatch_patcher_sha256": file_sha256(DISPATCH_PATCHER),
         "edit_error_patcher_sha256": file_sha256(EDIT_ERROR_PATCHER),
->>>>>>> Stashed changes
         "image_model_manifest_generator_sha256": file_sha256(
             IMAGE_MODEL_MANIFEST_GENERATOR
         ),
@@ -635,8 +629,6 @@ def install_image_model_manifest(output: Path) -> None:
     generate_image_model_manifest(site_packages_dir(output), destination)
 
 
-<<<<<<< Updated upstream
-=======
 def apply_dispatch_patch(output: Path) -> None:
     log("Applying mlx-vlm image-dispatch patch (Bonsai routing)")
     run([sys.executable, str(DISPATCH_PATCHER), str(output)])
@@ -647,7 +639,6 @@ def apply_edit_error_patch(output: Path) -> None:
     run([sys.executable, str(EDIT_ERROR_PATCHER), str(output)])
 
 
->>>>>>> Stashed changes
 def verify_distribution(output: Path, *, expect_mlx_vlm: bool) -> None:
     python = python_executable(output / "python")
     launcher = output / "bin" / "mlx-vlm-server"
@@ -866,11 +857,8 @@ def main() -> None:
             )
         install_overlay(output)
         install_image_model_manifest(output)
-<<<<<<< Updated upstream
-=======
         apply_dispatch_patch(output)
         apply_edit_error_patch(output)
->>>>>>> Stashed changes
 
     launcher = write_or_build_launcher(output)
     verify_distribution(output, expect_mlx_vlm=not args.skip_install)
