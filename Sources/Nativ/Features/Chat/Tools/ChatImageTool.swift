@@ -222,6 +222,7 @@ struct ChatImageToolExecutor {
             modelID: modelID,
             prompt: request.prompt,
             references: request.operation == .edit ? references : [],
+            supportsEditing: request.operation == .edit,
             settings: settings,
             seed: request.seed
         )

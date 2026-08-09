@@ -253,11 +253,17 @@ private struct ImageGenerationComposer: View {
     private var canSubmit: Bool {
         viewModel.canSubmit(isRunning: model.isRunning)
             && (!selectedModelIsEditOnly || viewModel.nextRequestIsEdit)
+            && (!viewModel.nextRequestIsEdit || selectedModelCanEdit)
     }
 
     private var placeholder: String {
         if selectedModelIsEditOnly && !viewModel.nextRequestIsEdit {
             return "Add a reference image to use this edit model"
+        }
+        if viewModel.nextRequestIsEdit && !selectedModelCanEdit {
+            return "This model can't edit reference images. "
+                + "Switch to a model that supports editing (e.g. FLUX.2), "
+                + "or remove the reference."
         }
         return viewModel.nextRequestIsEdit
             ? "Describe how to change the image"
@@ -314,6 +320,19 @@ private struct ImageGenerationComposer: View {
         )
     }
 
+    private var selectedModelCanEdit: Bool {
+        if let selectedModel = imageModels.first(where: {
+            $0.repoID == viewModel.modelID
+        }) {
+            return selectedModel.capabilities.contains(.imageEditing)
+        }
+        // Generation-only defaults (e.g. Bonsai) do not support reference
+        // images; fall back to false unless the ID is a known edit-only one.
+        return MLXImageModelResolver.isKnownImageEditOnlyModelID(
+            viewModel.modelID
+        )
+    }
+
     private var selectedModelProvider: LocalModelProvider? {
         if let provider = imageModels.first(where: {
             $0.repoID == viewModel.modelID
@@ -365,6 +384,9 @@ private struct ImageGenerationComposer: View {
         if selectedModelIsEditOnly && !viewModel.nextRequestIsEdit {
             return "Add a reference image to use this edit model"
         }
+        if viewModel.nextRequestIsEdit && !selectedModelCanEdit {
+            return "This model does not support editing with reference images"
+        }
         return viewModel.nextRequestIsEdit
             ? "Edit image (Return)"
             : "Generate image (Return)"
@@ -376,7 +398,8 @@ private struct ImageGenerationComposer: View {
         }
         viewModel.run(
             using: model,
-            modelIsInstalled: imageModels.contains { $0.repoID == viewModel.modelID }
+            modelIsInstalled: imageModels.contains { $0.repoID == viewModel.modelID },
+            supportsEditing: selectedModelCanEdit
         )
     }
 
