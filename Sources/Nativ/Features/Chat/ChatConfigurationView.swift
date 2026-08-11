@@ -26,6 +26,39 @@ struct ModelConfigurationLayout<Content: View>: View {
     }
 
     var body: some View {
+        ModelConfigurationLayoutContent(
+            settings: $model.settings,
+            settingsRequireRestart: model.settingsRequireRestart,
+            isConfigurationVisible: $isConfigurationVisible,
+            onReset: model.resetSettings
+        ) {
+            content
+        }
+    }
+}
+
+struct ModelConfigurationLayoutContent<Content: View>: View {
+    @Binding var settings: NativSettings
+    let settingsRequireRestart: Bool
+    @Binding var isConfigurationVisible: Bool
+    let onReset: () -> Void
+    private let content: Content
+
+    init(
+        settings: Binding<NativSettings>,
+        settingsRequireRestart: Bool,
+        isConfigurationVisible: Binding<Bool>,
+        onReset: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) {
+        _settings = settings
+        self.settingsRequireRestart = settingsRequireRestart
+        _isConfigurationVisible = isConfigurationVisible
+        self.onReset = onReset
+        self.content = content()
+    }
+
+    var body: some View {
         ZStack(alignment: .trailing) {
             HStack(spacing: 0) {
                 content
@@ -49,9 +82,9 @@ struct ModelConfigurationLayout<Content: View>: View {
 
             if isConfigurationVisible {
                 ModelConfigurationView(
-                    settings: $model.settings,
-                    settingsRequireRestart: model.settingsRequireRestart,
-                    onReset: model.resetSettings
+                    settings: $settings,
+                    settingsRequireRestart: settingsRequireRestart,
+                    onReset: onReset
                 )
                 .frame(width: ModelConfigurationLayoutMetrics.configurationWidth)
                 .ignoresSafeArea(.container, edges: .top)
@@ -117,22 +150,17 @@ struct ModelConfigurationView: View {
     }
 
     private var draftModelScanKey: String {
-        let normalizedSettings = settings.normalized()
-        return ([
-            String(normalizedSettings.speculativeDecodingEnabled),
-            normalizedSettings.modelSearchPath
-        ] + normalizedSettings.additionalModelSearchPaths)
-            .joined(separator: "\u{0}")
+        [
+            String(settings.speculativeDecodingEnabled),
+            settings.localModelSearchPaths.cacheKey
+        ].joined(separator: "\u{0}")
     }
 
     private func scanDraftModelLibraryIfNeeded() {
         guard settings.speculativeDecodingEnabled else {
             return
         }
-        draftModelLibrary.scan(
-            path: settings.modelSearchPath,
-            additionalPaths: settings.normalized().additionalModelSearchPaths
-        )
+        draftModelLibrary.scan(searchPaths: settings.localModelSearchPaths)
     }
 
     private var header: some View {

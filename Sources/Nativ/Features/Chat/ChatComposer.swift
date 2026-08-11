@@ -87,6 +87,8 @@ struct ChatComposer: View {
     let unavailableReason: String?
     let canCompose: Bool
     let canSend: Bool
+    let workspaceMode: ChatWorkspaceMode
+    let onSelectWorkspaceMode: (ChatWorkspaceMode) -> Void
     let onSend: (Bool) -> Void
     @State private var editorContentHeight: CGFloat = 0
     @State private var didApplyInitialReasoningDefault = false
@@ -195,6 +197,11 @@ struct ChatComposer: View {
                     .frame(width: 30, height: 30)
                     .help("Add attachment")
 
+                    ChatWorkspacePicker(
+                        selection: workspaceMode,
+                        onSelect: onSelectWorkspaceMode
+                    )
+
                     Spacer(minLength: 12)
 
                     modelPicker
@@ -231,16 +238,10 @@ struct ChatComposer: View {
         }
         .padding(.vertical, 18)
         .task(id: modelScanKey) {
-            localLibrary.scan(
-                path: model.settings.modelSearchPath,
-                additionalPaths: model.settings.normalized().additionalModelSearchPaths
-            )
+            localLibrary.scan(searchPaths: model.settings.localModelSearchPaths)
         }
         .onReceive(NotificationCenter.default.publisher(for: .localModelLibraryDidChange)) { _ in
-            localLibrary.scan(
-                path: model.settings.modelSearchPath,
-                additionalPaths: model.settings.normalized().additionalModelSearchPaths
-            )
+            localLibrary.scan(searchPaths: model.settings.localModelSearchPaths)
         }
         .onChange(of: localLibrary.models) { _, models in
             disableThinkingIfUnsupported(modelID: selectedModelID, models: models)
@@ -261,9 +262,7 @@ struct ChatComposer: View {
     }
 
     private var modelScanKey: String {
-        let settings = model.settings.normalized()
-        return ([settings.expandedModelSearchPath] + settings.additionalModelSearchPaths)
-            .joined(separator: "\u{0}")
+        model.settings.localModelSearchPaths.cacheKey
     }
 
     private var modelPicker: some View {

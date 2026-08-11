@@ -12,6 +12,7 @@ struct ChatToolExecutionContext {
     let imageReferences: [ChatImageAttachment]
     let modelSearchPath: String
     let additionalModelSearchPaths: [String]
+    var huggingFaceToken: String? = nil
     var analyticsDatabaseURL: URL? = nil
     var imageToolDependencies = ChatImageToolDependencies.live
     var imageModelSelection: ChatImageModelSelectionHandler? = nil
@@ -31,13 +32,40 @@ enum ChatToolRoundGate {
     }
 }
 
+enum ChatNativeToolConfiguration: Equatable {
+    case webSearch
+
+    var displayName: String {
+        switch self {
+        case .webSearch:
+            "Web Search"
+        }
+    }
+}
+
+struct ChatNativeToolDescriptor {
+    let definition: MLXChatToolDefinition
+    let configuration: ChatNativeToolConfiguration?
+}
+
 enum ChatToolRegistry {
     static func definitions(canEditImage: Bool) -> [MLXChatToolDefinition] {
-        var tools = ChatImageToolRegistry.definitions(canEdit: canEditImage)
-        tools.append(contentsOf: ChatSystemMonitorToolRegistry.definitions())
-        tools.append(contentsOf: ChatModelLibraryToolRegistry.definitions())
-        tools.append(contentsOf: ChatServerStatsToolRegistry.definitions())
-        tools.append(contentsOf: ChatSwitchModelToolRegistry.definitions())
+        descriptors(canEditImage: canEditImage).map(\.definition)
+    }
+
+    static func descriptors(canEditImage: Bool) -> [ChatNativeToolDescriptor] {
+        var definitions = ChatImageToolRegistry.definitions(canEdit: canEditImage)
+        definitions += ChatSystemMonitorToolRegistry.definitions()
+        definitions += ChatModelLibraryToolRegistry.definitions()
+        definitions += ChatServerStatsToolRegistry.definitions()
+        definitions += ChatSwitchModelToolRegistry.definitions()
+        var tools = definitions.map {
+            ChatNativeToolDescriptor(definition: $0, configuration: nil)
+        }
+        tools.append(ChatNativeToolDescriptor(
+            definition: ChatWebSearchToolRegistry.definition,
+            configuration: .webSearch
+        ))
         return tools
     }
 }
@@ -52,6 +80,7 @@ enum ChatToolDispatcher {
         ChatSystemMonitorToolRegistry.toolName: executeSystemMonitorTool,
         ChatModelLibraryToolRegistry.toolName: executeModelLibraryTool,
         ChatServerStatsToolRegistry.toolName: executeServerStatsTool,
+        ChatWebSearchToolRegistry.toolName: executeWebSearchTool,
     ]
 
     private static let failureHandlers: [String: FailureHandler] = [
@@ -68,6 +97,9 @@ enum ChatToolDispatcher {
         },
         ChatSwitchModelToolRegistry.toolName: { name, error in
             ChatSwitchModelToolExecutor().failurePayload(operation: name, error: error)
+        },
+        ChatWebSearchToolRegistry.toolName: { _, error in
+            ChatWebSearchToolExecutor().failurePayload(error: error)
         },
     ]
 
@@ -96,21 +128,26 @@ enum ChatToolDispatcher {
             call: call,
             hasImageReference: !context.imageReferences.isEmpty
         )
-        let installedModels = try await context.imageToolDependencies.discoverModels(
+        let availableModels = try await context.imageToolDependencies.discoverModels(
+            imageRequest.operation,
             context.modelSearchPath,
-            context.additionalModelSearchPaths
+            context.additionalModelSearchPaths,
+            context.huggingFaceToken,
+            context.imageGenerationModelID
         )
         let imageModelID: String
         switch ChatImageModelSelection.resolve(
             operation: imageRequest.operation,
             selectedModelID: context.imageGenerationModelID,
-            installedModels: installedModels
+            availableModels: availableModels
         ) {
         case .selected(let model):
             imageModelID = model.modelID
         case .selectionRequired(let selectionRequest):
             guard let requestSelection = context.imageModelSelection else {
-                throw ChatImageToolError.modelSelectionUnavailable(imageRequest.operation)
+                throw selectionRequest.models.isEmpty
+                    ? ChatImageToolError.noCompatibleModels(imageRequest.operation)
+                    : ChatImageToolError.modelSelectionUnavailable(imageRequest.operation)
             }
             let selectedModelID = try await requestSelection(selectionRequest)
             guard let selectedModel = ChatImageModelSelection.selectedModel(
@@ -120,8 +157,6 @@ enum ChatToolDispatcher {
                 throw ChatImageToolError.modelSelectionUnavailable(imageRequest.operation)
             }
             imageModelID = selectedModel.modelID
-        case .installationRequired:
-            throw ChatImageToolError.noCompatibleModels(imageRequest.operation)
         }
         await context.imageExecutionWillStart?(imageModelID)
         let result = try await context.imageToolDependencies.execute(
@@ -158,6 +193,14 @@ enum ChatToolDispatcher {
         context: ChatToolExecutionContext
     ) async throws -> ChatToolExecutionOutcome {
         let content = try ChatServerStatsToolExecutor().execute(call: call, context: context)
+        return ChatToolExecutionOutcome(content: content, attachments: [])
+    }
+
+    private static func executeWebSearchTool(
+        call: MLXChatToolCall,
+        context _: ChatToolExecutionContext
+    ) async throws -> ChatToolExecutionOutcome {
+        let content = try await ChatWebSearchToolExecutor().execute(call: call)
         return ChatToolExecutionOutcome(content: content, attachments: [])
     }
 
@@ -228,6 +271,8 @@ enum ChatToolPresentation {
             return serverStatsTitle(status: status)
         case ChatSwitchModelToolRegistry.toolName:
             return switchModelTitle(status: status)
+        case ChatWebSearchToolRegistry.toolName:
+            return webSearchTitle(status: status)
         default:
             return genericTitle(toolName: toolName, status: status)
         }
@@ -258,6 +303,8 @@ enum ChatToolPresentation {
                 return "chart.line.uptrend.xyaxis"
             case ChatSwitchModelToolRegistry.toolName:
                 return "arrow.triangle.2.circlepath"
+            case ChatWebSearchToolRegistry.toolName:
+                return "globe"
             default:
                 return "wrench.and.screwdriver"
             }
@@ -336,6 +383,19 @@ enum ChatToolPresentation {
             return "Model switch"
         case nil:
             return "Model switch tool"
+        }
+    }
+
+    private static func webSearchTitle(status: ChatTranscriptMessage.ToolStatus?) -> String {
+        switch status {
+        case .preparing, .running:
+            return "Searching the web…"
+        case .succeeded:
+            return "Searched the web"
+        case .failed, .cancelled, .awaitingConsent, .awaitingImageModelSelection, .declined:
+            return "Web search"
+        case nil:
+            return "Web search"
         }
     }
 
